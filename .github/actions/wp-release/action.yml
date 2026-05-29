@@ -65,8 +65,11 @@ runs:
 
         cd "${RUNNER_TEMP}/wp-dist"
         zip -rq "${GITHUB_WORKSPACE}/${SLUG}.zip" "${SLUG}"
-        echo "Built ${SLUG}.zip:"
-        unzip -l "${GITHUB_WORKSPACE}/${SLUG}.zip" | tail -n +2 | head -n 40
+        echo "Built ${SLUG}.zip — contents:"
+        # `unzip -l | head` would SIGPIPE under bash -o pipefail (GitHub's default
+        # composite shell), so list to a file and print it instead of piping.
+        unzip -l "${GITHUB_WORKSPACE}/${SLUG}.zip" > "${RUNNER_TEMP}/ziplist.txt"
+        cat "${RUNNER_TEMP}/ziplist.txt"
 
     - name: Attach ZIP to release
       uses: softprops/action-gh-release@v2
