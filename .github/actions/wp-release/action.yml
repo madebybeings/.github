@@ -5,6 +5,10 @@ inputs:
   slug:
     description: "Plugin/theme slug — becomes the ZIP name and the top-level folder inside it (must match the install folder WP expects)."
     required: true
+  source-dir:
+    description: "Directory (relative to repo root) that contains the plugin/theme itself. Use when the plugin does not live at the repo root (e.g. 'src/beings-mcp'). Defaults to the repo root."
+    required: false
+    default: "."
   node-version:
     description: "Node version to use when the repo has a package.json build step."
     required: false
@@ -51,17 +55,19 @@ runs:
       run: |
         set -eu
         SLUG="${{ inputs.slug }}"
+        SRC="${{ inputs.source-dir }}"
         STAGING="${RUNNER_TEMP}/wp-dist/${SLUG}"
         rm -rf "$STAGING"
         mkdir -p "$STAGING"
 
-        # Hard excludes always apply. Per-repo .distignore (WP-standard) adds the rest.
+        # Hard excludes always apply. Per-repo .distignore (WP-standard, read from
+        # the repo root) adds the rest. Source may be a subdirectory of the repo.
         EXCLUDES=(--exclude='.git' --exclude='.github' --exclude='node_modules' --exclude='*.zip')
         if [ -f .distignore ]; then
           EXCLUDES+=(--exclude-from='.distignore')
         fi
 
-        rsync -a ./ "$STAGING/" "${EXCLUDES[@]}"
+        rsync -a "${SRC%/}/" "$STAGING/" "${EXCLUDES[@]}"
 
         cd "${RUNNER_TEMP}/wp-dist"
         zip -rq "${GITHUB_WORKSPACE}/${SLUG}.zip" "${SLUG}"
