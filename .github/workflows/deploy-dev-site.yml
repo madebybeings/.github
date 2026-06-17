@@ -1,0 +1,82 @@
+name: Deploy dev site
+
+# Reusable workflow: deploys a Beings dev site by calling the devctl control
+# plane (https://devctl.dev.madebybeings.com/deploy), which pulls the branch,
+# restarts the dev server in place, and re-applies its Caddy route.
+#
+# Reusable across every site on the Beings Development Server. A caller repo
+# adds a tiny job:
+#
+#   deploy-dev:
+#     needs: quality
+#     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+#     uses: madebybeings/.github/.github/workflows/deploy-dev-site.yml@main
+#     with:
+#       slug: <slug>
+#       port: <port>
+#       command: <dev command>
+#       framework: next            # optional, default next
+#     secrets:
+#       DEVCTL_SHARED_SECRET: ${{ secrets.DEVCTL_SHARED_SECRET }}
+#
+# repo_url is derived from the caller's own repository — no input needed.
+
+on:
+  workflow_call:
+    inputs:
+      slug:
+        description: devctl server slug (== dev.subdomain in the Conductor registry)
+        required: true
+        type: string
+      port:
+        description: Port the dev server listens on
+        required: true
+        type: number
+      command:
+        description: Command devctl runs to start the dev server
+        required: true
+        type: string
+      framework:
+        description: Framework hint for devctl env-preflight
+        required: false
+        type: string
+        default: next
+      ref:
+        description: Git ref to deploy
+        required: false
+        type: string
+        default: dev
+    secrets:
+      DEVCTL_SHARED_SECRET:
+        description: Bearer token for the devctl control plane
+        required: true
+
+jobs:
+  deploy:
+    name: devctl deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger devctl deploy
+        env:
+          DEVCTL_SECRET: ${{ secrets.DEVCTL_SHARED_SECRET }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          SLUG: ${{ inputs.slug }}
+          PORT: ${{ inputs.port }}
+          COMMAND: ${{ inputs.command }}
+          FRAMEWORK: ${{ inputs.framework }}
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -n \
+            --arg slug "$SLUG" \
+            --arg repo_url "$REPO_URL" \
+            --arg ref "$REF" \
+            --arg command "$COMMAND" \
+            --argjson port "$PORT" \
+            --arg framework "$FRAMEWORK" \
+            '{slug:$slug, repo_url:$repo_url, ref:$ref, command:$command, port:$port, framework:$framework}')
+          echo "Deploying $REPO_URL@$REF -> devctl ($SLUG:$PORT)"
+          curl -fsS -X POST https://devctl.dev.madebybeings.com/deploy \
+            -H "Authorization: Bearer $DEVCTL_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
