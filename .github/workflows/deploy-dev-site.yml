@@ -15,11 +15,15 @@ name: Deploy dev site
 #       slug: <slug>
 #       port: <port>
 #       command: <dev command>
-#       framework: next            # optional, default next
+#       local_path: /home/coder/clients/<client>/<repo>   # the checkout path
+#       framework: next                                    # optional, default next
 #     secrets:
 #       DEVCTL_SHARED_SECRET: ${{ secrets.DEVCTL_SHARED_SECRET }}
 #
 # repo_url is derived from the caller's own repository — no input needed.
+# local_path is REQUIRED: workspace-IA client checkouts live at
+# /home/coder/clients/<client>/<repo>, which does NOT match devctl's default of
+# CLIENTS_ROOT/<repo-name>, so the path must be passed explicitly.
 
 on:
   workflow_call:
@@ -34,6 +38,10 @@ on:
         type: number
       command:
         description: Command devctl runs to start the dev server
+        required: true
+        type: string
+      local_path:
+        description: Absolute checkout path on the dev server (registry local_path)
         required: true
         type: string
       framework:
@@ -63,6 +71,7 @@ jobs:
           SLUG: ${{ inputs.slug }}
           PORT: ${{ inputs.port }}
           COMMAND: ${{ inputs.command }}
+          LOCAL_PATH: ${{ inputs.local_path }}
           FRAMEWORK: ${{ inputs.framework }}
           REF: ${{ inputs.ref }}
         run: |
@@ -72,10 +81,11 @@ jobs:
             --arg repo_url "$REPO_URL" \
             --arg ref "$REF" \
             --arg command "$COMMAND" \
+            --arg local_path "$LOCAL_PATH" \
             --argjson port "$PORT" \
             --arg framework "$FRAMEWORK" \
-            '{slug:$slug, repo_url:$repo_url, ref:$ref, command:$command, port:$port, framework:$framework}')
-          echo "Deploying $REPO_URL@$REF -> devctl ($SLUG:$PORT)"
+            '{slug:$slug, repo_url:$repo_url, ref:$ref, command:$command, local_path:$local_path, port:$port, framework:$framework}')
+          echo "Deploying $REPO_URL@$REF -> devctl ($SLUG:$PORT at $LOCAL_PATH)"
           curl -fsS -X POST https://devctl.dev.madebybeings.com/deploy \
             -H "Authorization: Bearer $DEVCTL_SECRET" \
             -H "Content-Type: application/json" \
