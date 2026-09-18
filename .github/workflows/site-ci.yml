@@ -1,0 +1,139 @@
+name: Site CI
+
+on:
+  workflow_call:
+    inputs:
+      pnpm_version:
+        description: pnpm version used for install and scripts
+        required: false
+        type: string
+        default: "11.1.3"
+      prepare_command:
+        description: Optional command to prepare build environment before checks
+        required: false
+        type: string
+        default: "node scripts/write-ci-build-stub.mjs"
+      typecheck_command:
+        description: Typecheck command
+        required: false
+        type: string
+        default: "pnpm typecheck"
+      tailwind_audit_command:
+        description: Tailwind audit command
+        required: false
+        type: string
+        default: "pnpm audit:tailwind"
+      tailwind_audit_mode:
+        description: Tailwind audit behaviour, soft, strict, or off
+        required: false
+        type: string
+        default: "soft"
+      extra_audit_commands:
+        description: Optional additional audit commands, one or more shell lines
+        required: false
+        type: string
+        default: ""
+      build_command:
+        description: Production build command
+        required: false
+        type: string
+        default: "pnpm build"
+      sanity_project_id:
+        description: Optional Sanity project id exposed to CI
+        required: false
+        type: string
+        default: ""
+      sanity_dataset:
+        description: Optional Sanity dataset exposed to CI
+        required: false
+        type: string
+        default: ""
+      sanity_api_version:
+        description: Optional Sanity API version exposed to CI
+        required: false
+        type: string
+        default: ""
+      force_javascript_actions_to_node24:
+        description: Opt in to forcing JavaScript actions onto Node 24
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SANITY_API_READ_TOKEN:
+        description: Optional read token for builds that need live Sanity content
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, Audit, Build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: site-ci-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: ${{ inputs.force_javascript_actions_to_node24 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm_version }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure optional Sanity environment
+        shell: bash
+        env:
+          SANITY_PROJECT_ID_INPUT: ${{ inputs.sanity_project_id }}
+          SANITY_DATASET_INPUT: ${{ inputs.sanity_dataset }}
+          SANITY_API_VERSION_INPUT: ${{ inputs.sanity_api_version }}
+          SANITY_API_READ_TOKEN_INPUT: ${{ secrets.SANITY_API_READ_TOKEN }}
+        run: |
+          if [ -n "$SANITY_PROJECT_ID_INPUT" ]; then
+            echo "NEXT_PUBLIC_SANITY_PROJECT_ID=$SANITY_PROJECT_ID_INPUT" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$SANITY_DATASET_INPUT" ]; then
+            echo "NEXT_PUBLIC_SANITY_DATASET=$SANITY_DATASET_INPUT" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$SANITY_API_VERSION_INPUT" ]; then
+            echo "NEXT_PUBLIC_SANITY_API_VERSION=$SANITY_API_VERSION_INPUT" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$SANITY_API_READ_TOKEN_INPUT" ]; then
+            echo "SANITY_API_READ_TOKEN=$SANITY_API_READ_TOKEN_INPUT" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare build environment
+        if: inputs.prepare_command != ''
+        shell: bash
+        run: ${{ inputs.prepare_command }}
+
+      - name: Typecheck
+        shell: bash
+        run: ${{ inputs.typecheck_command }}
+
+      - name: Tailwind arbitrary value audit
+        if: inputs.tailwind_audit_mode != 'off'
+        continue-on-error: ${{ inputs.tailwind_audit_mode == 'soft' }}
+        shell: bash
+        run: ${{ inputs.tailwind_audit_command }}
+
+      - name: Additional audits
+        if: inputs.extra_audit_commands != ''
+        shell: bash
+        run: ${{ inputs.extra_audit_commands }}
+
+      - name: Build
+        shell: bash
+        run: ${{ inputs.build_command }}
