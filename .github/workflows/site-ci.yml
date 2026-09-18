@@ -8,6 +8,16 @@ on:
         required: false
         type: string
         default: "11.1.3"
+      timeout_minutes:
+        description: Maximum runtime for the quality job
+        required: false
+        type: number
+        default: 30
+      pre_install_command:
+        description: Optional command to run after Node setup and before dependency installation
+        required: false
+        type: string
+        default: ""
       prepare_command:
         description: Optional command to prepare build environment before checks
         required: false
@@ -29,7 +39,12 @@ on:
         type: string
         default: "soft"
       extra_audit_commands:
-        description: Optional additional audit commands, one or more shell lines
+        description: Optional additional blocking audit commands, one or more shell lines
+        required: false
+        type: string
+        default: ""
+      soft_audit_commands:
+        description: Optional additional non-blocking audit commands, one or more shell lines
         required: false
         type: string
         default: ""
@@ -70,6 +85,7 @@ jobs:
   quality:
     name: Typecheck, Audit, Build
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     concurrency:
       group: site-ci-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: true
@@ -89,6 +105,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      - name: Pre-install checks
+        if: inputs.pre_install_command != ''
+        shell: bash
+        run: ${{ inputs.pre_install_command }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -133,6 +154,12 @@ jobs:
         if: inputs.extra_audit_commands != ''
         shell: bash
         run: ${{ inputs.extra_audit_commands }}
+
+      - name: Non-blocking audits
+        if: inputs.soft_audit_commands != ''
+        continue-on-error: true
+        shell: bash
+        run: ${{ inputs.soft_audit_commands }}
 
       - name: Build
         shell: bash
