@@ -58,6 +58,12 @@ on:
       DEVCTL_SHARED_SECRET:
         description: Bearer token for the devctl control plane
         required: true
+      DEVCTL_CF_ACCESS_CLIENT_ID:
+        description: Cloudflare Access service token id for devctl-dev (optional during cutover)
+        required: false
+      DEVCTL_CF_ACCESS_CLIENT_SECRET:
+        description: Cloudflare Access service token secret for devctl-dev (optional during cutover)
+        required: false
 
 jobs:
   deploy:
@@ -67,6 +73,8 @@ jobs:
       - name: Trigger devctl deploy
         env:
           DEVCTL_SECRET: ${{ secrets.DEVCTL_SHARED_SECRET }}
+          CF_ID: ${{ secrets.DEVCTL_CF_ACCESS_CLIENT_ID }}
+          CF_SECRET: ${{ secrets.DEVCTL_CF_ACCESS_CLIENT_SECRET }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           SLUG: ${{ inputs.slug }}
           PORT: ${{ inputs.port }}
@@ -86,7 +94,17 @@ jobs:
             --arg framework "$FRAMEWORK" \
             '{slug:$slug, repo_url:$repo_url, ref:$ref, command:$command, local_path:$local_path, port:$port, framework:$framework}')
           echo "Deploying $REPO_URL@$REF -> devctl ($SLUG:$PORT at $LOCAL_PATH)"
-          curl -fsS -X POST https://devctl.dev.madebybeings.com/deploy \
+          # Access-gated devctl-dev when the caller passes the CF Access pair (beings-ops#164),
+          # else the legacy grey-cloud host, which is retired once every caller has moved.
+          if [ -n "$CF_ID" ] && [ -n "$CF_SECRET" ]; then
+            DEVCTL_URL=https://devctl-dev.madebybeings.com
+            CF=(-H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET")
+          else
+            DEVCTL_URL=https://devctl.dev.madebybeings.com
+            CF=()
+            echo "::warning::No DEVCTL_CF_ACCESS_* secrets passed; using the legacy devctl host."
+          fi
+          curl -fsS -X POST "$DEVCTL_URL/deploy" "${CF[@]}" \
             -H "Authorization: Bearer $DEVCTL_SECRET" \
             -H "Content-Type: application/json" \
             -d "$payload"
